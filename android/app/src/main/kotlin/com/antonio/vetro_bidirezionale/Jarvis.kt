@@ -56,6 +56,7 @@ class Jarvis(
     fun avvia() {
         attivo = true
         preparaVoce()
+        riprovaGoogleSeServe()
         if (ModelloVocale.modello != null) {
             ascolta()
             return
@@ -151,12 +152,17 @@ class Jarvis(
         val inizializzato = TextToSpeech.OnInitListener { esito ->
             val t = tts ?: return@OnInitListener
             if (esito != TextToSpeech.SUCCESS || (!scegliVoceFemminile(t) && haGoogle)) {
-                // Google senza voci italiane scaricate: si torna alla voce Samsung.
+                // Google senza voci italiane scaricate: si torna alla voce Samsung,
+                // e più tardi si riprova con Google (vedi avvia()).
                 t.shutdown()
                 tts = null
-                if (haGoogle) preparaVoce(provaGoogle = false)
+                if (haGoogle) {
+                    voceDiRiserva = true
+                    preparaVoce(provaGoogle = false)
+                }
                 return@OnInitListener
             }
+            if (haGoogle) voceDiRiserva = false
             // Un filo più veloce suona meno "scandito" e più naturale.
             t.setSpeechRate(1.08f)
             t.setPitch(1.0f)
@@ -175,6 +181,11 @@ class Jarvis(
                 override fun onError(id: String?) = riprendiAscolto()
             })
             ttsPronto = true
+            // Se nel frattempo doveva dire qualcosa, lo dice ora.
+            daDire?.let { frase ->
+                daDire = null
+                principale.post { parla(frase) }
+            }
         }
         tts = if (haGoogle) TextToSpeech(activity, inizializzato, google) else TextToSpeech(activity, inizializzato)
     }
@@ -199,19 +210,21 @@ class Jarvis(
         italiane.forEach {
             Log.i("Jarvis", "voce ${it.name} qualita=${it.quality} rete=${it.isNetworkConnectionRequired} ${it.features}")
         }
-        val locali = italiane.filter {
-            !it.isNetworkConnectionRequired && !it.features.orEmpty().contains("notInstalled")
+        // Voci italiane di Google: "itb" e "kda" sono femminili, "itc" e "itd" maschili
+        // (come le varianti "#male_N"). "itb" è la più naturale dei motori recenti.
+        val femminili = italiane.filter {
+            !it.features.orEmpty().contains("notInstalled") &&
+                !it.name.contains("#male") && !it.name.contains("-itc-") && !it.name.contains("-itd-")
         }
-        // Voci Google: "it-it-x-kda-local" e le varianti "#female_N" sono femminili, "#male_N" maschili.
-        val femminili = locali.filterNot { it.name.contains("#male") }
-        val scelta = femminili.firstOrNull { it.name == "it-it-x-kda-local" }
-            ?: femminili.firstOrNull { it.name.contains("#female") }
-            ?: femminili.maxByOrNull { it.quality }
+        fun migliore(rete: Boolean) = femminili.filter { it.isNetworkConnectionRequired == rete }.let { v ->
+            v.firstOrNull { it.name.contains("-itb-") }
+                ?: v.firstOrNull { it.name.contains("-kda-") && !it.name.contains("#") }
+                ?: v.firstOrNull { it.name.contains("#female") }
+                ?: v.maxByOrNull { it.quality }
+        }
+        val scelta = migliore(rete = false)
         voceLocale = scelta
-        voceRete = italiane.firstOrNull {
-            it.isNetworkConnectionRequired && !it.name.contains("#male") &&
-                !it.features.orEmpty().contains("notInstalled")
-        }
+        voceRete = migliore(rete = true)
         if (scelta != null) t.voice = scelta
         Log.i("Jarvis", "voce locale: ${scelta?.name ?: "predefinita"}, via rete: ${voceRete?.name ?: "nessuna"}")
         return scelta != null
@@ -225,9 +238,30 @@ class Jarvis(
     private var parlando = false
     private var ultimoParziale = ""
 
+    /** Frase da dire appena la voce è pronta (dopo un ricollegamento). */
+    private var daDire: String? = null
+
+    /** true se sta usando la voce Samsung perché Google non aveva voci italiane. */
+    private var voceDiRiserva = false
+    private var ultimoTentativoGoogle = 0L
+
+    /** Con la voce di riserva, ogni tanto riprova Google (es. dopo che ha riscaricato l'italiano). */
+    private fun riprovaGoogleSeServe() {
+        val ora = System.currentTimeMillis()
+        if (!voceDiRiserva || parlando || ora - ultimoTentativoGoogle < 10 * 60_000) return
+        ultimoTentativoGoogle = ora
+        Log.i("Jarvis", "riprovo la voce di Google")
+        ricollegaVoce(null)
+    }
+
     fun parla(testo: String) {
-        val t = tts ?: return
-        if (!ttsPronto || testo.isBlank()) return
+        if (testo.isBlank()) return
+        val t = tts
+        if (t == null || !ttsPronto) {
+            daDire = testo
+            if (t == null) preparaVoce()
+            return
+        }
         // Con internet la voce più naturale, altrimenti quella sul telefono.
         val voce = if (online()) voceRete ?: voceLocale else voceLocale
         if (voce != null && t.voice?.name != voce.name) t.voice = voce
@@ -238,7 +272,25 @@ class Jarvis(
         // (lei non dice mai "Jarvis", quindi non si comanda da sola).
         // Solo quando aspetta l'argomento da cercare non deve sentire sé stessa.
         if (libero) servizio?.setPause(true)
-        t.speak(testo, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
+        if (t.speak(testo, TextToSpeech.QUEUE_FLUSH, null, "jarvis") == TextToSpeech.ERROR) {
+            // Il servizio vocale si è scollegato (es. Google l'ha aggiornato di
+            // notte): si ricollega e ripete la frase appena è pronto.
+            Log.w("Jarvis", "voce scollegata, la ricollego")
+            parlando = false
+            invia("parlando", "no")
+            ricollegaVoce(testo)
+        }
+    }
+
+    private fun ricollegaVoce(testo: String?) {
+        daDire = testo
+        ttsPronto = false
+        try {
+            tts?.shutdown()
+        } catch (_: Exception) {
+        }
+        tts = null
+        preparaVoce()
     }
 
     /** "Jarvis stop": smette di parlare. true se stava parlando. */

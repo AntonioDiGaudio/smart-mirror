@@ -44,7 +44,8 @@
 | Jarvis notizie / Jarvis cerca… | ultime notizie o ricerca libera |
 | Jarvis volume sette / alza / abbassa | volume da 0 a 10 |
 | Jarvis stop | smette di parlare |
-| Jarvis spegni | spegne lo schermo |
+| Jarvis spegniti / chiudi / blocca lo schermo | blocca lo schermo |
+| Jarvis torna | torna allo specchio |
 
 ## Hardware
 

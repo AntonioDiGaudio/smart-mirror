@@ -34,7 +34,7 @@ const _parole = [
   'avanti', 'prossima', 'prossimo', 'successiva', 'indietro', 'precedente',
   'pausa', 'ferma', 'stop', 'riprendi', 'play',
   'chiudi', 'esci', 'torna', 'specchio',
-  'ore', 'grazie', 'settimana', 'spegni',
+  'ore', 'grazie', 'settimana', 'spegni', 'blocca', 'schermo', 'dormi', 'buonanotte',
   'che', 'cosa', 'sai', 'fare', 'puoi', 'aiuto', 'comandi',
   'cerca', 'cercare', 'notizie', 'notizia', 'news', 'ultime', 'internet',
   'volume', 'alza', 'abbassa', 'massimo', 'minimo', 'muto',
@@ -89,7 +89,9 @@ class Jarvis {
           ],
       'foto', 'fotografie', 'video', 'avanti', 'indietro', 'prossima', 'precedente', 'successiva',
       'pausa', 'ferma', 'stop', 'riprendi', 'play', 'chiudi', 'esci', 'torna', 'specchio',
-      'che ore sono', 'ore', 'grazie', 'spegni', 'che sai fare', 'cosa sai fare', 'cosa puoi fare',
+      'che ore sono', 'ore', 'grazie', 'che sai fare', 'cosa sai fare', 'cosa puoi fare',
+      'spegni', 'spegni schermo', 'spegni lo schermo', 'blocca', 'blocca schermo', 'blocca lo schermo',
+      'dormi', 'buonanotte', 'torna allo specchio',
       'aiuto', 'comandi', 'cerca', 'cerca notizie', 'notizie', 'ultime notizie', 'news', 'internet',
       'alza volume', 'abbassa volume', 'volume massimo', 'volume minimo', 'muto',
       for (final n in _numeri) 'volume $n',
@@ -300,15 +302,21 @@ class Jarvis {
     final nav = navigatore.currentState;
     if (nav == null) return '';
 
-    if (ha(['spegni'])) {
-      // Spegnere è l'unico comando "pesante": solo con "Jarvis spegni" detto
-      // chiaro (nome nella stessa frase, al massimo una parola in più),
-      // mai da rumori o frasi lunghe capite a metà.
-      if (!conNome || c.length > 2) return '';
+    // "Jarvis spegni(ti) / chiudi / blocca lo schermo / dormi / buonanotte":
+    // blocca lo schermo. ("spegniti" non è nel vocabolario: arriva come "spegni".)
+    if (ha(['spegni', 'chiudi', 'blocca', 'dormi', 'buonanotte'])) {
+      // Spegnere è l'unico comando "pesante": solo con il nome nella stessa
+      // frase e frase corta ("spegni lo schermo" al massimo), mai da rumori
+      // o frasi lunghe capite a metà.
+      if (!conNome || c.length > 3) return '';
       nav.popUntil((r) => r.isFirst);
       // Prima finisce di parlare, poi spegne.
       Future.delayed(const Duration(milliseconds: 2500), Presenza.istanza.spegniOra);
-      return 'Signore, buonanotte. Cerchi di non sentire troppo la mia mancanza.';
+      return _uno([
+        'Signore, buonanotte. Cerchi di non sentire troppo la mia mancanza.',
+        'Signore, spengo le luci. Torno a fare la specchiera.',
+        'Signore, come desidera. Io resto qui, a riflettere.',
+      ]);
     }
 
     if (ha(['volume', 'alza', 'abbassa', 'muto'])) {
@@ -316,7 +324,7 @@ class Jarvis {
       return '';
     }
 
-    if (ha(['chiudi', 'esci', 'torna', 'specchio'])) {
+    if (ha(['esci', 'torna', 'specchio'])) {
       nav.popUntil((r) => r.isFirst);
       return _uno(['Signore, come desidera.', 'Signore, torno a fare lo specchio. Ruolo impegnativo.']);
     }
@@ -538,7 +546,7 @@ class PaginaAiuto extends StatelessWidget {
     ('Jarvis meteo Palermo', 'previsioni di Palermo'),
     ('Jarvis meteo domani', 'oggi, domani, dopodomani, lunedì…'),
     ('Jarvis meteo settimana', 'le leggo tutti i 7 giorni'),
-    ('Jarvis spegni', 'spengo lo schermo'),
+    ('Jarvis spegniti / chiudi', 'blocco lo schermo'),
     ('Jarvis volume sette', 'da zero a dieci, o alza / abbassa'),
     ('Jarvis stop', 'smetto di parlare'),
     ('Jarvis foto', 'apre le sue foto'),
@@ -548,7 +556,7 @@ class PaginaAiuto extends StatelessWidget {
     ('Jarvis notizie', 'le ultime notizie in Italia'),
     ('Jarvis cerca', 'poi dica l\'argomento: cerco le notizie'),
     ('Jarvis che ore sono', 'le dico l\'ora'),
-    ('Jarvis chiudi', 'torna allo specchio'),
+    ('Jarvis torna', 'torna allo specchio'),
     ('Jarvis', 'da solo: poi ha 6 secondi per il comando'),
   ];
 

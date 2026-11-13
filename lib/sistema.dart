@@ -117,10 +117,12 @@ class Presenza {
   /// si vede niente finché Android non lo spegne col suo timeout.
   final schermoNero = ValueNotifier(false);
 
-  /// "Jarvis spegni": spegne subito.
+  /// "Jarvis spegniti / chiudi": spegne subito. Glielo si chiede apposta,
+  /// quindi non guarda il sensore di prossimità (che magari vede la mano).
   void spegniOra() {
     _fino = DateTime.now();
-    _aggiorna();
+    _videoInCorso = false;
+    _spegni();
   }
 
   void avvia() {
@@ -160,13 +162,17 @@ class Presenza {
         _fino = DateTime.now().add(const Duration(minutes: 1));
         return;
       }
-      _ultimoStato = false;
-      if (!await Sistema.spegniSchermo()) {
-        schermoNero.value = true;
-        Sistema._luminositaMinima(true);
-      }
+      await _spegni();
     } finally {
       _controllando = false;
+    }
+  }
+
+  Future<void> _spegni() async {
+    _ultimoStato = false;
+    if (!await Sistema.spegniSchermo()) {
+      schermoNero.value = true;
+      Sistema._luminositaMinima(true);
     }
   }
 }
